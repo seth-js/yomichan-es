@@ -20,7 +20,7 @@ Yomichan should now be installed.
 
 6. Head to the bottom of the Yomichan settings page.
 7. Select `Import Settings`.
-8. Choose `yomichan-settings-2023-02-01.json`
+8. Choose `yomichan-settings-2023-01-31.json`
 9. Go to the `Dictionaries` section and import `Spanish Dictionary.zip`
 
 ### Instructions (chromium-based)
@@ -35,7 +35,7 @@ Yomichan should now be installed.
 
 7. Head to the bottom of the Yomichan settings page.
 8. Select `Import Settings`.
-9. Choose `yomichan-settings-2023-02-01.json`
+9. Choose `yomichan-settings-2023-01-31.json`
 10. Go to the `Dictionaries` section and import `Spanish Dictionary.zip`
 
 Everything should now be set up for Yomichan.
