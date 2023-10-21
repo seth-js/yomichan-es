@@ -29,13 +29,13 @@ lr.on('line', (line) => {
         const { form, tags } = ent;
 
         if (form && tags) {
-          let isBlaclisted = false;
+          let isBlacklisted = false;
 
           tags.forEach((tag) => {
-            if (blacklistedTags.includes(tag)) isBlaclisted = true;
+            if (blacklistedTags.includes(tag)) isBlacklisted = true;
           });
 
-          if (!isBlaclisted) {
+          if (!isBlacklisted) {
             if (!automatedForms[form]) automatedForms[form] = {};
             if (!automatedForms[form][word]) automatedForms[form][word] = {};
             if (!automatedForms[form][word][pos])
