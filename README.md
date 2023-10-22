@@ -11,7 +11,7 @@
 ### Instructions (firefox)
 1. Download the repository, clone it, whatever.
 
-2. Download `yomichan-settings-2023-02-04.json`, `Spanish.Dictionary.zip`, and `Spanish.Forvo.zip` from the [Releases](https://github.com/seth-js/yomichan-es/releases) section.
+2. Download `yomichan-settings-2023-10-22.json`, `Spanish.Dictionary.zip`, and `Spanish.Forvo.zip` from the [Releases](https://github.com/seth-js/yomichan-es/releases) section.
 
 3. Go to: about:debugging#/runtime/this-firefox
 
@@ -25,7 +25,7 @@
 
 7. Select `Import Settings`.
 
-8. Choose `yomichan-settings-2023-02-04.json`
+8. Choose `yomichan-settings-2023-10-22.json`
 
 9. Search for `Enable search page clipboard text monitoring` and turn it off and on.
 
@@ -34,7 +34,7 @@
 ### Instructions (chromium-based)
 1. Download the repository, clone it, whatever.
 
-2. Download `yomichan-settings-2023-02-04.json`, `Spanish.Dictionary.zip`, and `Spanish.Forvo.zip` from the [Releases](https://github.com/seth-js/yomichan-es/releases) section.
+2. Download `yomichan-settings-2023-10-22.json`, `Spanish.Dictionary.zip`, and `Spanish.Forvo.zip` from the [Releases](https://github.com/seth-js/yomichan-es/releases) section.
 
 3. Go to: chrome://extensions/
 
@@ -50,7 +50,7 @@
 
 8. Select `Import Settings`.
 
-9. Choose `yomichan-settings-2023-02-04.json`
+9. Choose `yomichan-settings-2023-10-22.json`
 
 10. Search for `Enable search page clipboard text monitoring` and turn it off and on.
 
@@ -90,4 +90,4 @@ The Firefox extension unfortunately doesn't survive restarts. This means you'll 
 
 Chrome is planning to drop support for extensions that use Manifest V2. This means that unless the developer for Yomichan updates it by then, Chrome may no longer be supported.
 
-Frequency data was created from parsing the [OpenSubtitles](http://www.opensubtitles.org/) Spanish [corpus](https://opus.nlpl.eu/OpenSubtitles-v2018.php). The parser used the Kaikki data as well. Phrases like "acabar de" were correctly parsed as such rather than seperately as "ababar" and "de". Words found in the 95% coverage list I created are marked as popular.
+Frequency data was created from parsing a collection of [Spanish Netflix subtitles](https://github.com/seth-js/lang-sub-collection/tree/main/European%20Spanish%20(Netflix)). The parser used the Kaikki data as well. Phrases like "acabar de" were correctly parsed as such rather than seperately as "ababar" and "de". Words found in the 98% coverage list I created are marked as popular.
