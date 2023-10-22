@@ -5,35 +5,26 @@ const formDict = JSON.parse(readFileSync('data/tidy/spanish-forms.json'));
 
 const formPointer = {};
 
-Object.entries(formDict).forEach((ent) => {
-  const [form, info] = ent;
+for (const [form, info] of Object.entries(formDict)) {
+  const [lemma] = Object.entries(info)[0] || '';
 
-  let lemma = '';
+  if (lemma && !formPointer[form]) {
+    formPointer[form] = lemma;
+  }
+}
 
-  Object.entries(info).forEach((inf) => {
-    lemma = inf[0];
-  });
+const nameDict = new Set();
 
-  if (lemma && !formPointer[form]) formPointer[form] = lemma;
-});
+for (const [lemma, info] of Object.entries(lemmaDict)) {
 
-const nameDict = {};
+  if (Object.keys(info).length === 1 && info.name) {
+    nameDict.add(lemma);
+  }
+}
 
-Object.entries(lemmaDict).forEach((ent) => {
-  const [lemma, info] = ent;
+// const sentences = JSON.parse(readFileSync('data/sentences/opensubtitles-es-sentences.json'));
 
-  if (
-    JSON.stringify(info).includes('"name"') &&
-    Object.entries(info).length === 1
-  )
-    nameDict[lemma] = 1;
-});
-
-const sentences = JSON.parse(
-  readFileSync('data/sentences/opensubtitles-es-sentences.json'),
-);
-
-// const sentences = ['¡ Un mundo de espadas y hechicería !'];
+const sentences = ['¡Un mundo de espadas y hechicería!', 'si Dios quiere.'];
 
 const freqList = {};
 let totalWords = 0;
@@ -41,152 +32,115 @@ let missedWords = 0;
 
 let index = 0;
 for (const sentence of sentences) {
-  index += 1;
-  // every 100,000 and the first one
-  if (index === 1 || index % 100000 === 0)
+  index++;
+  // log progress the first time, then every 100,000 sentences, and the last one
+  if (index === 1 || index % 100000 === 0 || index === sentences.length) {
     console.log(`(${index}/${sentences.length})`);
+  }
 
   // stop at 5 million
-  if (index === 5000000) break;
+  if (index === 5000000) {
+    break;
+  }
 
   const words = getWords(sentence);
-
   const customWords = getCustomWords(words);
 
-  customWords.forEach((ent) => {
-    const { word, surface } = ent;
+  // console.log(customWords);
 
-    if (
-      word !== 'JUNK' &&
-      /\p{L}/u.test(word) &&
-      /\p{L}/u.test(surface) &&
-      !nameDict[word]
-    ) {
-      totalWords += 1;
-      if (freqList[word]) freqList[word] += 1;
-      else freqList[word] = 1;
+  for (const { word, surface } of customWords) {
+    if (word !== '' && /\p{L}/u.test(word) && /\p{L}/u.test(surface) && !nameDict.has(word)) {
+      totalWords++;
+      freqList[word] = (freqList[word] || 0) + 1;
     }
 
-    if (word === 'JUNK' && /\p{L}/u.test(word) && /\p{L}/u.test(surface))
-      missedWords += 1;
-  });
+    if (word === '' && /\p{L}/u.test(word) && /\p{L}/u.test(surface)) {
+      missedWords++;
+    }
+  }
 }
 
-const freqArr = [];
+const freqArr = Object.entries(freqList)
+  .filter(([word]) => lemmaDict[word])
+  .map(([word, count]) => ({ word, count }))
+  .sort((a, b) => b.count - a.count);
 
-Object.entries(freqList).forEach((freq) => {
-  const [word, count] = freq;
+const totalCount = freqArr.reduce((sum, entry) => sum + entry.count, 0);
 
-  if (lemmaDict[word]) {
-    freqArr.push({ word, count });
-  }
-});
-
-freqArr.sort((a, b) => (a.count < b.count ? 1 : -1));
-
-let totalCount = 0;
-freqArr.forEach((entry) => {
-  const { count } = entry;
-  totalCount += count;
-});
+const thresholds = [0.95, 0.98, 0.99];
+const coverage = new Map();
+const thousand = [];
 
 let percSoFar = 0.0;
-const nineFive = [];
-const nineFiveObj = {};
-const nineEight = [];
-const nineEightObj = {};
-const nineNine = [];
-const nineNineObj = {};
-const thousand = [];
+
+for (const { word, count } of freqArr) {
+  percSoFar += count / totalCount;
+
+  for (const threshold of thresholds) {
+    if (threshold >= percSoFar) {
+      coverage.set(threshold, coverage.get(threshold) || new Set());
+      coverage.get(threshold).add(word);
+    }
+  }
+
+  if (coverage.get(0.95).size === 1000) {
+    thousand.push(...coverage.get(0.95));
+    console.log(`The top 1000 words cover ${+(percSoFar * 100).toFixed(2)}%.`);
+  }
+}
+
 const hundredCoverage = {};
-freqArr.forEach((entry) => {
-  const { word, count } = entry;
 
-  if (percSoFar < 0.99) {
-    percSoFar += count / totalCount;
-    nineNine.push(word);
-    nineNineObj[word] = count;
-  }
+for (const { word, count } of freqArr) {
+  hundredCoverage[word] = count;
+}
 
-  if (percSoFar < 0.98) {
-    nineEight.push(word);
-    nineEightObj[word] = count;
-  }
-  
-  if (percSoFar < 0.95) {
-    nineFive.push(word);
-    nineFiveObj[word] = count;
-  }
+const message = `
+Your corpus is made up of ${totalCount} words.
+${coverage.get(0.95).size} words cover 95%.
+${coverage.get(0.98).size} words cover 98%.
+${coverage.get(0.99).size} words cover 99%.
 
-  if (nineEight.length === 1000) {
-    thousand.push(...nineEight);
-    console.log(
-      `1000 words cover ${+parseFloat(percSoFar).toFixed(2) * 100}%.`,
-    );
-  }
+Frequency list contains ${freqArr.length} unique word(s).
 
-  if (hundredCoverage[word]) hundredCoverage[word] += count;
-  else hundredCoverage[word] = count;
-});
-
-let message = '';
-
-message += `Your corpus is made up of ${totalCount} words.\n`;
-message += `${nineFive.length} words cover 95%.\n`;
-message += `${nineEight.length} words cover 98%.\n`;
-message += `${nineNine.length} words cover 99%.\n`;
-
-writeFileSync('data/freq/freq.json', JSON.stringify(freqArr));
-writeFileSync('data/freq/nine-five.json', JSON.stringify(nineFiveObj));
-writeFileSync('data/freq/nine-eight.json', JSON.stringify(nineEightObj));
-writeFileSync('data/freq/nine-nine.json', JSON.stringify(nineNineObj));
-writeFileSync('data/freq/1k.json', JSON.stringify(thousand));
-writeFileSync('data/freq/hundred.json', JSON.stringify(hundredCoverage));
-
-const minus = totalWords - missedWords;
-
-message += `${
-  +parseFloat(minus / totalWords).toFixed(2) * 100
-}% of words were able to find a definition.\n`;
-
-message += `Frequency list contains ${freqArr.length} unique word(s).`;
+${((totalWords - missedWords) / totalWords * 100).toFixed(2)}% of words were able to find a definition.
+`;
 
 console.log(message);
+
+const frequencies = {
+  'nine-five': Array.from(coverage.get(0.95)),
+  'nine-eight': Array.from(coverage.get(0.98)),
+  'nine-nine': Array.from(coverage.get(0.99)),
+  '1k': thousand,
+  'hundred': hundredCoverage,
+};
+
+for (const [file, data] of Object.entries(frequencies)) {
+  writeFileSync(`data/freq/${file}.json`, JSON.stringify(data));
+}
 
 writeFileSync('data/freq/info.txt', message);
 
 function getWords(sentence) {
-  const wordList = [];
-
-  const words = sentence.split(/(?=\s)|(?<=\s)/);
-
-  words.forEach((word) => {
-    let lemma = '';
-    if (!/[.,!?:"]|\s/.test(word)) {
-      if (formPointer[word]) {
-        lemma = formPointer[word];
+  return sentence.split(/(?=\s)|(?<=\s)|(?=[.,!?—\]\[\)":¡])|(?<=[.,!?—\]\[\(":¡])/g)
+    .map(word => {
+      if (/[.,!?:"]|\s/.test(word)) {
+        return { word, lemma: word };
       }
 
-      if (lemmaDict[word]) {
-        lemma = word;
-      }
-
-      if (word !== word.toLowerCase()) {
-        if (formPointer[word.toLowerCase()]) {
-          lemma = formPointer[word.toLowerCase()];
+      for (const text of [word, word.toLowerCase(), toCapitalCase(word)]) {
+        if (formPointer[text]) {
+          return { word, lemma: formPointer[text] };
         }
 
-        if (lemmaDict[word.toLowerCase()]) {
-          lemma = word.toLowerCase();
+        if (lemmaDict[text]) {
+          return { word, lemma: text };
         }
       }
-    }
 
-    if (lemma) wordList.push({ word, lemma });
-    else wordList.push({ word, lemma: word });
-  });
-
-  return wordList;
+      return { word, lemma: word };
+    });
 }
 
 function getCustomWords(words) {
@@ -199,30 +153,31 @@ function getCustomWords(words) {
 
     let matches = 0;
     while (inner.length > 0) {
-      let lemma_text = get_lemma_text(inner);
-      let surface_text = get_surface_text(inner);
+      let lemmaText = getLemmaText(inner);
+      let surfaceText = getSurfaceText(inner);
 
-      let target_text = '';
+      let targetText = '';
 
-      let try_search = false;
+      const surfaceTextEntries = [surfaceText, surfaceText.toLowerCase(), toCapitalCase(surfaceText)];
+      const lemmaTextEntries = [lemmaText, lemmaText.toLowerCase(), toCapitalCase(lemmaText)];
 
-      if (lemmaDict[surface_text]) target_text = surface_text;
-      else if (lemmaDict[surface_text.toLowerCase()])
-        target_text = surface_text.toLowerCase();
-      else if (lemmaDict[lemma_text]) target_text = lemma_text;
-      else if (lemmaDict[lemma_text.toLowerCase()])
-        target_text = lemma_text.toLowerCase();
-      else try_search = true;
-
-      if (try_search) {
-        if (lemmaDict[surface_text]) target_text = formPointer[surface_text];
-
-        if (formPointer[surface_text.toLowerCase()])
-          target_text = formPointer[surface_text.toLowerCase()];
+      for (const text of [...surfaceTextEntries, lemmaTextEntries]) {
+        if (!targetText) {
+          if (lemmaDict[text]) targetText = text;
+        }
       }
 
-      if (target_text !== '') {
-        customWordList.push({ word: target_text, surface: surface_text });
+      if (!targetText) {
+        for (const text of surfaceTextEntries) {
+          if (!targetText) {
+            if (formPointer[text])
+              targetText = formPointer[text];
+          }
+        }
+      }
+
+      if (targetText !== '') {
+        customWordList.push({ word: targetText, surface: surfaceText });
         matches = inner.length;
         inner.splice(0, inner.length);
       }
@@ -234,7 +189,7 @@ function getCustomWords(words) {
 
       const { word } = missing;
 
-      customWordList.push({ word: 'JUNK', surface: word });
+      customWordList.push({ word: '', surface: word });
       outer.shift();
     } else outer.splice(0, matches);
   }
@@ -242,26 +197,14 @@ function getCustomWords(words) {
   return customWordList;
 }
 
-function get_lemma_text(input) {
-  let output = '';
-
-  for (entry of input) {
-    const { lemma } = entry;
-
-    output += lemma;
-  }
-
-  return output;
+function toCapitalCase(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
 }
 
-function get_surface_text(input) {
-  let output = '';
+function getLemmaText(input) {
+  return input.reduce((output, entry) => output + entry.lemma, '');
+}
 
-  for (entry of input) {
-    const surface = entry['word'];
-
-    output += surface;
-  }
-
-  return output;
+function getSurfaceText(input) {
+  return input.reduce((output, entry) => output + entry.word, '');
 }

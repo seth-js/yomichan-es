@@ -1,5 +1,5 @@
 {
-  "name": "spanish",
+  "name": "spanish-kaikki-to-yomichan",
   "version": "1.0.0",
   "main": "create-folders.js",
   "scripts": {
@@ -12,5 +12,5 @@
     "date-and-time": "^2.4.2",
     "line-by-line": "^0.1.6"
   },
-  "description": ""
+  "description": "Converts Kaikki Spanish JSON to Yomichan compatible dictionary."
 }

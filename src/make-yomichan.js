@@ -6,7 +6,7 @@ const currentDate = date.format(now, 'MMM-DD-YYYY');
 
 const lemmaDict = JSON.parse(readFileSync('data/tidy/spanish-lemmas.json'));
 const formDict = JSON.parse(readFileSync('data/tidy/spanish-forms.json'));
-const popularDict = JSON.parse(readFileSync('data/freq/nine-five.json'));
+const popularDict = new Set(JSON.parse(readFileSync('data/freq/nine-five.json')));
 const frequencies = JSON.parse(readFileSync('data/freq/hundred.json'));
 
 const lemmaYomi = [];
@@ -34,7 +34,7 @@ Object.entries(lemmaDict).forEach((ent) => {
 
     let popular = '';
 
-    if (popularDict[lemma]) popular = 'P';
+    if (popularDict.has(lemma)) popular = 'P';
 
     let freq = 0;
 
