@@ -10,11 +10,14 @@ const lemmaDict = JSON.parse(readFileSync('data/tidy/spanish-lemmas.json'));
 const formDict = JSON.parse(readFileSync('data/tidy/spanish-forms.json'));
 
 let popularDict;
-let frequencies = {};
+const frequencies = new Map();
 
-if (existsSync('data/freq/nine-five.json') && existsSync('data/freq/hundred.json')) {
-  popularDict = new Set(JSON.parse(readFileSync('data/freq/nine-five.json')));
-  frequencies = JSON.parse(readFileSync('data/freq/hundred.json'));
+if (existsSync('data/freq/nine-eight.json') && existsSync('data/freq/hundred.json')) {
+  popularDict = new Set(JSON.parse(readFileSync('data/freq/nine-eight.json')));
+
+  for (const { word, count } of JSON.parse(readFileSync('data/freq/hundred.json'))) {
+    frequencies.set(word, count);
+  }
 }
 
 const lemmaYomi = [];
@@ -29,7 +32,7 @@ for (const [lemma, infoMap] of allInfo) {
     const tags = [pos, ...(info.tags || [])].join(' ');
     const ipa = info.ipa || '';
     const popular = popularDict && popularDict.has(lemma) ? 'P' : '';
-    const freq = frequencies[lemma] || 0;
+    const freq = frequencies.get(lemma) || 0;
 
     // term, ipa, tags, rules, frequency, definitions, sequence, tags2
     lemmaYomi.push([lemma, ipa, tags, '', freq, glosses, 0, popular]);
@@ -55,7 +58,10 @@ for (const [form, allInfo] of Object.entries(formDict)) {
   }
 }
 
-const tagBank = Array.from(allPOS).map((pos) => [pos, 'partOfSpeech', -3, pos, 0]);
+const tagBank = [
+  ['P', 'popular', -10, 'popular term', 10],
+  ...Array.from(allPOS).map((pos) => [pos, 'partOfSpeech', -3, pos, 0])
+];
 
 const customTags = ['non-lemma', 'masculine', 'feminine', 'neuter'];
 
@@ -80,7 +86,7 @@ while (allYomi.length > 0) {
   writeFileSync(`${yomiPath}/term_bank_${bankIndex}.json`, JSON.stringify(batch));
 }
 
-const freqYomi = Object.entries(frequencies).map(([word, count]) => [word, 'freq', count]);
+const freqYomi = [...frequencies.entries()].map(([word, count]) => [word, 'freq', count]);
 
 writeFileSync(`${yomiPath}/term_meta_bank_1.json`, JSON.stringify(freqYomi));
 

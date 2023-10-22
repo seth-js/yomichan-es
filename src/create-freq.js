@@ -22,24 +22,27 @@ for (const [lemma, info] of Object.entries(lemmaDict)) {
   }
 }
 
-// const sentences = JSON.parse(readFileSync('data/sentences/opensubtitles-es-sentences.json'));
+const sentences = JSON.parse(readFileSync('data/sentences/netflix-es-sentences.json'));
 
-const sentences = ['¡Un mundo de espadas y hechicería!', 'si Dios quiere.'];
+// const sentences = ['¡Un mundo de espadas y hechicería!', 'si Dios quiere.'];
 
-const freqList = {};
+const freqList = new Map();
 let totalWords = 0;
 let missedWords = 0;
+let sentenceLimit = 5000000;
+
+console.log('Parsing corpus...');
 
 let index = 0;
 for (const sentence of sentences) {
   index++;
   // log progress the first time, then every 100,000 sentences, and the last one
   if (index === 1 || index % 100000 === 0 || index === sentences.length) {
-    console.log(`(${index}/${sentences.length})`);
+    console.log(`(${index.toLocaleString()} of ${sentences.length.toLocaleString()} sentences parsed)`);
   }
 
-  // stop at 5 million
-  if (index === 5000000) {
+  if (index === sentenceLimit) {
+    console.log(`(${sentenceLimit.toLocaleString()} sentence limit reached. moving on...)`)
     break;
   }
 
@@ -51,57 +54,66 @@ for (const sentence of sentences) {
   for (const { word, surface } of customWords) {
     if (word !== '' && /\p{L}/u.test(word) && /\p{L}/u.test(surface) && !nameDict.has(word)) {
       totalWords++;
-      freqList[word] = (freqList[word] || 0) + 1;
+
+      if (freqList.has(word)) {
+        freqList.set(word, freqList.get(word) + 1);
+      } else {
+        freqList.set(word, 1);
+      }
     }
 
-    if (word === '' && /\p{L}/u.test(word) && /\p{L}/u.test(surface)) {
+    if (word === '' && /\p{L}/u.test(surface)) {
       missedWords++;
     }
   }
 }
 
-const freqArr = Object.entries(freqList)
-  .filter(([word]) => lemmaDict[word])
-  .map(([word, count]) => ({ word, count }))
-  .sort((a, b) => b.count - a.count);
+console.log('Done parsing.');
 
-const totalCount = freqArr.reduce((sum, entry) => sum + entry.count, 0);
+const freqArr = [];
 
-const thresholds = [0.95, 0.98, 0.99];
-const coverage = new Map();
-const thousand = [];
+for (const [word, count] of freqList) {
+  freqArr.push({ word, count });
+}
+
+freqArr.sort((a, b) => b.count - a.count);
+
+const nineFive = [];
+const nineEight = [];
+const nineNine = [];
+const thousand = {};
 
 let percSoFar = 0.0;
 
 for (const { word, count } of freqArr) {
-  percSoFar += count / totalCount;
+  percSoFar += count / totalWords;
 
-  for (const threshold of thresholds) {
-    if (threshold >= percSoFar) {
-      coverage.set(threshold, coverage.get(threshold) || new Set());
-      coverage.get(threshold).add(word);
-    }
+  if (0.95 >= percSoFar) {
+    nineFive.push(word);
   }
 
-  if (coverage.get(0.95).size === 1000) {
-    thousand.push(...coverage.get(0.95));
-    console.log(`The top 1000 words cover ${+(percSoFar * 100).toFixed(2)}%.`);
+  if (0.98 >= percSoFar) {
+    nineEight.push(word);
   }
-}
 
-const hundredCoverage = {};
+  if (0.99 >= percSoFar) {
+    nineNine.push(word);
+  }
 
-for (const { word, count } of freqArr) {
-  hundredCoverage[word] = count;
+  if (nineFive.length === 1000) {
+    thousand.words = [...nineFive];
+    thousand.coverage = `${+(percSoFar * 100).toFixed(2)}%`;
+  }
 }
 
 const message = `
-Your corpus is made up of ${totalCount} words.
-${coverage.get(0.95).size} words cover 95%.
-${coverage.get(0.98).size} words cover 98%.
-${coverage.get(0.99).size} words cover 99%.
+Your corpus is made up of ${totalWords.toLocaleString()} words.
+The 1000 most common words cover ${thousand.coverage}.
+${nineFive.length} words cover 95%.
+${nineEight.length} words cover 98%.
+${nineNine.length} words cover 99%.
 
-Frequency list contains ${freqArr.length} unique word(s).
+Frequency list contains ${freqArr.length.toLocaleString()} unique word(s).
 
 ${((totalWords - missedWords) / totalWords * 100).toFixed(2)}% of words were able to find a definition.
 `;
@@ -109,11 +121,11 @@ ${((totalWords - missedWords) / totalWords * 100).toFixed(2)}% of words were abl
 console.log(message);
 
 const frequencies = {
-  'nine-five': Array.from(coverage.get(0.95)),
-  'nine-eight': Array.from(coverage.get(0.98)),
-  'nine-nine': Array.from(coverage.get(0.99)),
+  'nine-five': nineFive,
+  'nine-eight': nineEight,
+  'nine-nine': nineNine,
   '1k': thousand,
-  'hundred': hundredCoverage,
+  'hundred': freqArr,
 };
 
 for (const [file, data] of Object.entries(frequencies)) {
@@ -123,7 +135,7 @@ for (const [file, data] of Object.entries(frequencies)) {
 writeFileSync('data/freq/info.txt', message);
 
 function getWords(sentence) {
-  return sentence.split(/(?=\s)|(?<=\s)|(?=[.,!?—\]\[\)":¡])|(?<=[.,!?—\]\[\(":¡])/g)
+  return sentence.replace(/^-/, '- ').split(/(?=\s)|(?<=\s)|(?=[.,!?—\]\[\)":¡¿…])|(?<=[.,!?—\]\[\(":¡¿…])/g)
     .map(word => {
       if (/[.,!?:"]|\s/.test(word)) {
         return { word, lemma: word };
