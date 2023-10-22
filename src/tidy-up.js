@@ -44,6 +44,9 @@ lr.on('line', (line) => {
       }
     }
 
+    let nestedGlossObj = {};
+
+    let senseIndex = 0;
     for (const sense of senses) {
       const { raw_glosses, form_of, tags } = sense;
 
@@ -60,7 +63,32 @@ lr.on('line', (line) => {
 
           lemmaDict[word][pos].ipa ??= ipa;
           lemmaDict[word][pos].glosses ??= [];
-          lemmaDict[word][pos].glosses.push(...glosses);
+
+          if (glosses.length > 1) {
+            let nestedObj = nestedGlossObj;
+            for (const level of glosses) {
+              nestedObj[level] = nestedObj[level] || {};
+              nestedObj = nestedObj[level];
+            }
+
+            if (senseIndex === senses.length - 1) {
+              if (Object.keys(nestedGlossObj).length > 0) {
+                handleNest(nestedGlossObj, word, pos);
+                nestedGlossObj = {};
+              }
+            }
+          } else if (glosses.length === 1) {
+            if (Object.keys(nestedGlossObj).length > 0) {
+              handleNest(nestedGlossObj, word, pos);
+              nestedGlossObj = {};
+            }
+
+            const [gloss] = glosses;
+
+            if (!JSON.stringify(lemmaDict[word][pos].glosses).includes(gloss)) {
+              lemmaDict[word][pos].glosses.push(gloss);
+            }
+          }
 
           if (selectedTags.length > 0) {
             lemmaDict[word][pos].tags ??= [];
@@ -72,6 +100,7 @@ lr.on('line', (line) => {
           }
         }
       }
+      senseIndex += 1;
     }
   }
 });
@@ -85,7 +114,9 @@ lr.on('end', () => {
     formDict[form][lemma] ??= {};
     formDict[form][lemma][pos] ??= [];
 
-    const [formInfo] = glosses;
+    // handle nested form glosses
+    const formInfo = !glosses[0].includes('##') ? glosses[0] : glosses[1];
+
     formDict[form][lemma][pos].push(formInfo);
   }
 
@@ -118,7 +149,42 @@ lr.on('end', () => {
 
   console.log('Examples:');
   console.log(lemmaDict.fijar);
+  console.log(lemmaDict.llamar);
   console.log(formDict['fíjate']);
+  console.log(formDict.he);
 
   console.log('Done.');
 });
+
+function handleLevel(nest, level) {
+  const nestDefs = [];
+  let defIndex = 0;
+
+  for (const [def, children] of Object.entries(nest)) {
+    defIndex += 1;
+
+    if (Object.keys(children).length > 0) {
+      const nextLevel = level + 1;
+      const childDefs = handleLevel(children, nextLevel);
+
+      const listType = level === 1 ? "li" : "number";
+      const content = level === 1 ? def : [{ "tag": "span", "data": { "listType": "number" }, "content": `${defIndex}. ` }, def];
+
+      nestDefs.push([{ "tag": "div", "data": { "listType": listType }, "content": content }, { "tag": "div", "data": { "listType": "ol" }, "content": childDefs }]);
+    } else {
+      nestDefs.push({ "tag": "div", "data": { "listType": "li" }, "content": [{ "tag": "span", "data": { "listType": "number" }, "content": `${defIndex}. ` }, def] });
+    }
+  }
+
+  return nestDefs;
+}
+
+function handleNest(nestedGlossObj, word, pos) {
+  const nestedGloss = handleLevel(nestedGlossObj, 1);
+
+  if (nestedGloss.length > 0) {
+    for (const entry of nestedGloss) {
+      lemmaDict[word][pos].glosses.push({ "type": "structured-content", "content": entry });
+    }
+  }
+}

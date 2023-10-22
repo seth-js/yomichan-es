@@ -1,116 +1,116 @@
-const { readFileSync, writeFileSync } = require('fs');
+const { readFileSync, writeFileSync, existsSync, readdirSync, createWriteStream, unlinkSync } = require('fs');
 const date = require('date-and-time');
+const archiver = require('archiver');
+const path = require('path');
 const now = new Date();
 
 const currentDate = date.format(now, 'MMM-DD-YYYY');
 
 const lemmaDict = JSON.parse(readFileSync('data/tidy/spanish-lemmas.json'));
 const formDict = JSON.parse(readFileSync('data/tidy/spanish-forms.json'));
-const popularDict = new Set(JSON.parse(readFileSync('data/freq/nine-five.json')));
-const frequencies = JSON.parse(readFileSync('data/freq/hundred.json'));
+
+let popularDict;
+let frequencies = {};
+
+if (existsSync('data/freq/nine-five.json') && existsSync('data/freq/hundred.json')) {
+  popularDict = new Set(JSON.parse(readFileSync('data/freq/nine-five.json')));
+  frequencies = JSON.parse(readFileSync('data/freq/hundred.json'));
+}
 
 const lemmaYomi = [];
-const allPOS = [];
+const allPOS = new Set();
+const allInfo = Object.entries(lemmaDict);
 
-Object.entries(lemmaDict).forEach((ent) => {
-  const [lemma, allInfo] = ent;
-
-  Object.entries(allInfo).forEach((inf) => {
-    const [pos, info] = inf;
-
-    if (!allPOS.includes(pos)) allPOS.push(pos);
+for (const [lemma, infoMap] of allInfo) {
+  for (const [pos, info] of Object.entries(infoMap)) {
+    allPOS.add(pos);
 
     const { glosses } = info;
-
-    let tags = [pos];
-
-    if (info['tags']) tags.push(...info['tags']);
-
-    tags = tags.join(' ');
-
-    let ipa = '';
-
-    if (info['ipa']) ipa = info['ipa'];
-
-    let popular = '';
-
-    if (popularDict.has(lemma)) popular = 'P';
-
-    let freq = 0;
-
-    if (frequencies[lemma]) freq = frequencies[lemma];
+    const tags = [pos, ...(info.tags || [])].join(' ');
+    const ipa = info.ipa || '';
+    const popular = popularDict && popularDict.has(lemma) ? 'P' : '';
+    const freq = frequencies[lemma] || 0;
 
     // term, ipa, tags, rules, frequency, definitions, sequence, tags2
     lemmaYomi.push([lemma, ipa, tags, '', freq, glosses, 0, popular]);
-  });
-});
+  }
+}
 
 const formYomi = [];
 
-Object.entries(formDict).forEach((ent) => {
-  const [form, allInfo] = ent;
-
-  Object.entries(allInfo).forEach((inf) => {
-    const [lemma, info] = inf;
-
-    Object.entries(info).forEach((part) => {
-      const [pos, glosses] = part;
-
-      const formInfos = [];
-
-      glosses.forEach((gloss) => {
+for (const [form, allInfo] of Object.entries(formDict)) {
+  for (const [lemma, info] of Object.entries(allInfo)) {
+    for (const [pos, glosses] of Object.entries(info)) {
+      const formInfos = glosses.map((gloss) => {
         if (/-automated-/.test(gloss)) {
           const modifiedGloss = gloss.replace('-automated- ', '');
-
-          formInfos.push(
-            `${pos} -automated- {${form} -> ${lemma}} ${modifiedGloss} (->${lemma})`,
-          );
+          return `${pos} -automated- {${form} -> ${lemma}} ${modifiedGloss} (->${lemma})`;
         } else {
-          formInfos.push(`${pos} {${form} -> ${lemma}} ${gloss} (->${lemma})`);
+          return `${pos} {${form} -> ${lemma}} ${gloss} (->${lemma})`;
         }
       });
 
       formYomi.push([form, '', 'non-lemma', '', 0, formInfos, 0, '']);
-    });
-  });
-});
+    }
+  }
+}
 
-const tagBank = [];
+const tagBank = Array.from(allPOS).map((pos) => [pos, 'partOfSpeech', -3, pos, 0]);
 
-allPOS.forEach((pos) => {
-  tagBank.push([pos, 'partOfSpeech', -3, pos, 0]);
-});
+const customTags = ['non-lemma', 'masculine', 'feminine', 'neuter'];
 
-tagBank.push(['masculine', 'masculine', -3, 'masculine', 0]);
-tagBank.push(['feminine', 'feminine', -3, 'feminine', 0]);
-tagBank.push(['neuter', 'neuter', -3, 'neuter', 0]);
-tagBank.push(['P', 'popular', -10, 'popular term', 10]);
+tagBank.push(...customTags.map((tag) => [tag, tag, -3, tag, 0]));
 
 const allYomi = [...lemmaYomi, ...formYomi];
 
-writeFileSync(
-  'data/yomichan/tag_bank_1.json',
-  JSON.stringify([...tagBank, ['non-lemma', 'non-lemma', -3, 'non-lemma', 0]]),
-);
+const yomiPath = 'data/yomichan';
 
-writeFileSync('data/yomichan/term_bank_1.json', JSON.stringify(allYomi));
+writeFileSync(`${yomiPath}/tag_bank_1.json`, JSON.stringify(tagBank));
 
-const freqYomi = [];
+for (const file of readdirSync(yomiPath)) {
+  if (file.includes('term_bank_')) unlinkSync(`${yomiPath}/${file}`);
+}
 
-Object.entries(frequencies).forEach((entry) => {
-  const [word, count] = entry;
+const batchSize = 10000;
+let bankIndex = 0;
 
-  freqYomi.push([word, 'freq', count]);
+while (allYomi.length > 0) {
+  const batch = allYomi.splice(0, batchSize);
+  bankIndex += 1;
+  writeFileSync(`${yomiPath}/term_bank_${bankIndex}.json`, JSON.stringify(batch));
+}
+
+const freqYomi = Object.entries(frequencies).map(([word, count]) => [word, 'freq', count]);
+
+writeFileSync(`${yomiPath}/term_meta_bank_1.json`, JSON.stringify(freqYomi));
+
+writeFileSync(`${yomiPath}/index.json`, JSON.stringify({
+  title: "Seth's Spanish Dictionary",
+  format: 3,
+  revision: currentDate,
+  sequenced: true,
+}));
+
+const output = createWriteStream(`${yomiPath}/dictionary.zip`);
+
+const archive = archiver('zip', { zlib: { level: 9 } });
+
+archive.on('error', (err) => {
+  throw err;
 });
 
-writeFileSync('data/yomichan/term_meta_bank_1.json', JSON.stringify(freqYomi));
+const files = readdirSync(yomiPath);
 
-writeFileSync(
-  'data/yomichan/index.json',
-  JSON.stringify({
-    title: "Seth's Spanish Dictionary",
-    format: 3,
-    revision: currentDate,
-    sequenced: true,
-  }),
-);
+for (const file of files) {
+  if (path.extname(file) === '.json') {
+    const filePath = path.join(yomiPath, file);
+    archive.file(filePath, { name: file });
+  }
+}
+
+archive.pipe(output);
+archive.finalize();
+
+output.on('close', () => {
+  console.log(`Saved "${yomiPath}/dictionary.zip". Import it in Yomichan.`);
+});
