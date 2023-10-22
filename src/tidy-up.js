@@ -1,7 +1,8 @@
 const { writeFileSync } = require('fs');
 
-const LineByLineReader = require('line-by-line'),
-  lr = new LineByLineReader('data/kaikki/kaikki.org-dictionary-Spanish.json');
+const LineByLineReader = require('line-by-line');
+
+const lr = new LineByLineReader('data/kaikki/kaikki.org-dictionary-Spanish.json');
 
 const lemmaDict = {};
 const formDict = {};
@@ -16,152 +17,108 @@ const blacklistedTags = [
   'class',
   'error-unknown-tag',
   'error-unrecognized-form',
+  'infinitive',
 ];
 
 lr.on('line', (line) => {
   if (line) {
-    const data = JSON.parse(line);
-
-    const { word, pos, senses, sounds, forms } = data;
+    const { word, pos, senses, sounds, forms } = JSON.parse(line);
 
     if (forms) {
-      forms.forEach((ent) => {
-        const { form, tags } = ent;
+      for (const { form, tags } of forms) {
+        if (form && tags && !tags.some(value => blacklistedTags.includes(value))) {
+          automatedForms[form] ??= {};
+          automatedForms[form][word] ??= {};
+          automatedForms[form][word][pos] ??= [];
 
-        if (form && tags) {
-          let isBlacklisted = false;
-
-          tags.forEach((tag) => {
-            if (blacklistedTags.includes(tag)) isBlacklisted = true;
-          });
-
-          if (!isBlacklisted) {
-            if (!automatedForms[form]) automatedForms[form] = {};
-            if (!automatedForms[form][word]) automatedForms[form][word] = {};
-            if (!automatedForms[form][word][pos])
-              automatedForms[form][word][pos] = [];
-
-            automatedForms[form][word][pos].push(tags.join(' '));
-          }
+          automatedForms[form][word][pos].push(tags.join(' '));
         }
-      });
+      }
     }
 
     let ipa = '';
 
     if (sounds) {
-      sounds.forEach((sound) => {
-        const soundIPA = sound['ipa'];
-
-        if (soundIPA && !ipa) {
-          ipa = soundIPA;
-        }
-      });
+      for (const sound of sounds) {
+        ipa = ipa || sound.ipa;
+      }
     }
 
-    senses.forEach((sense) => {
-      const { raw_glosses, form_of } = sense;
+    for (const sense of senses) {
+      const { raw_glosses, form_of, tags } = sense;
 
-      const tags = [];
+      const glosses = raw_glosses || sense.glosses;
 
-      if (sense['tags']) {
-        sense['tags'].forEach((tag) => {
-          if (tag === 'masculine') tags.push(tag);
-          if (tag === 'feminine') tags.push(tag);
-          if (tag === 'neuter') tags.push(tag);
-        });
-      }
+      const selectedTags = (tags || []).filter(tag => ['masculine', 'feminine', 'neuter'].includes(tag));
 
-      if (raw_glosses) {
+      if (glosses && glosses.length > 0) {
         if (form_of) {
           formStuff.push([word, sense, pos]);
         } else {
-          if (!lemmaDict[word]) lemmaDict[word] = {};
+          lemmaDict[word] ??= {};
+          lemmaDict[word][pos] ??= {};
 
-          if (!lemmaDict[word][pos]) lemmaDict[word][pos] = {};
+          lemmaDict[word][pos].ipa ??= ipa;
+          lemmaDict[word][pos].glosses ??= [];
+          lemmaDict[word][pos].glosses.push(...glosses);
 
-          if (ipa && !lemmaDict[word][pos]['ipa'])
-            lemmaDict[word][pos]['ipa'] = ipa;
-
-          if (!lemmaDict[word][pos]['glosses'])
-            lemmaDict[word][pos]['glosses'] = [];
-
-          lemmaDict[word][pos]['glosses'].push(...raw_glosses);
-
-          if (tags) {
-            if (!lemmaDict[word][pos]['tags'])
-              lemmaDict[word][pos]['tags'] = [];
-
-            tags.forEach((tag) => {
-              if (!lemmaDict[word][pos]['tags'].includes(tag))
-                lemmaDict[word][pos]['tags'].push(tag);
-            });
+          if (selectedTags.length > 0) {
+            lemmaDict[word][pos].tags ??= [];
+            for (const tag of selectedTags) {
+              if (!lemmaDict[word][pos].tags.includes(tag)) {
+                lemmaDict[word][pos].tags.push(tag);
+              }
+            }
           }
         }
       }
-    });
+    }
   }
 });
 
 lr.on('end', () => {
-  formStuff.forEach((stuff) => {
-    const [form, info, pos] = stuff;
+  for (const [form, info, pos] of formStuff) {
+    const { glosses, form_of } = info;
+    const lemma = form_of[0].word;
 
-    const { raw_glosses, form_of } = info;
+    formDict[form] ??= {};
+    formDict[form][lemma] ??= {};
+    formDict[form][lemma][pos] ??= [];
 
-    const lemma = form_of[0]['word'];
-
-    if (!formDict[form]) formDict[form] = {};
-    if (!formDict[form][lemma]) formDict[form][lemma] = {};
-    if (!formDict[form][lemma][pos]) formDict[form][lemma][pos] = [];
-
-    const [formInfo] = raw_glosses;
-
+    const [formInfo] = glosses;
     formDict[form][lemma][pos].push(formInfo);
-  });
+  }
 
   let missingForms = 0;
 
-  Object.entries(automatedForms).forEach((ent) => {
-    const [form, info] = ent;
-
+  for (const [form, info] of Object.entries(automatedForms)) {
     if (!formDict[form]) {
       missingForms += 1;
 
-      // avoid forms that incorrectly point to a shit ton of lemmas
-      if (Object.entries(info).length < 5) {
-        Object.entries(info).forEach((inf) => {
-          const [lemma, parts] = inf;
+      // limit forms that point to too many lemmas
+      if (Object.keys(info).length < 5) {
+        for (const [lemma, parts] of Object.entries(info)) {
+          for (const [pos, glosses] of Object.entries(parts)) {
+            formDict[form] ??= {};
+            formDict[form][lemma] ??= {};
+            formDict[form][lemma][pos] ??= [];
 
-          Object.entries(parts).forEach((part) => {
-            const [pos, glosses] = part;
-
-            if (!formDict[form]) formDict[form] = {};
-            if (!formDict[form][lemma]) formDict[form][lemma] = {};
-            if (!formDict[form][lemma][pos]) formDict[form][lemma][pos] = [];
-
-            let modifiedGlosses = [];
-
-            glosses.forEach((gloss) => {
-              modifiedGlosses.push(`-automated- ${gloss}`);
-            });
-
+            const modifiedGlosses = glosses.map(gloss => `-automated- ${gloss}`);
             formDict[form][lemma][pos].push(...modifiedGlosses);
-          });
-        });
+          }
+        }
       }
     }
-  });
+  }
 
-  console.log(
-    `There were ${missingForms} missing forms that have now been automatically populated.`,
-  );
+  console.log(`There were ${missingForms.toLocaleString()} missing forms that have now been automatically populated.`);
 
   writeFileSync('data/tidy/spanish-lemmas.json', JSON.stringify(lemmaDict));
   writeFileSync('data/tidy/spanish-forms.json', JSON.stringify(formDict));
 
-  console.log(lemmaDict['fíjate'])
-  console.log(formDict['fíjate'])
+  console.log('Examples:');
+  console.log(lemmaDict.fijar);
+  console.log(formDict['fíjate']);
 
   console.log('Done.');
 });
